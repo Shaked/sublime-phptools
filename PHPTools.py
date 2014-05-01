@@ -3,7 +3,9 @@ import threading
 import os.path
 import os
 import subprocess
+from os.path import dirname, realpath
 
+MY_PLUGIN = dirname(realpath(__file__))
 def plugin_loaded():
     global s
     s = sublime.load_settings('PHPTools.sublime-settings')
@@ -21,7 +23,7 @@ class PHPTools(sublime_plugin.EventListener):
 
         full_file_name_tmp = full_file_name + "-tmp"
         bin_php = s.get("php_path", "php")
-        formatter_path = s.get("formatter_path", "./")
+        formatter_path = s.get("formatter_path", MY_PLUGIN + "/php.tools/codeFormatter.php")
         cmd = "{} {} {} > {}; mv {} {};".format(
             bin_php,
             formatter_path,

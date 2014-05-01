@@ -1,4 +1,3 @@
 {
-    "php_path":"/usr/local/Cellar/php55/5.5.10/bin/php",
-    "formatter_path":"./php.tools/codeFormatter.php"
+    "php_path":"/usr/local/Cellar/php55/5.5.10/bin/php"
 }
