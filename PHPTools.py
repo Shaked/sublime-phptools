@@ -2,6 +2,7 @@ import sublime, sublime_plugin
 import threading
 import os.path
 import os
+import re
 import subprocess
 from os.path import dirname, realpath
 
@@ -16,6 +17,8 @@ class PHPTools(sublime_plugin.EventListener):
     def on_post_save_async(self, view):
         full_file_name = view.file_name()
         folder_name, file_name = os.path.split(full_file_name)
+        folder_name = folder_name.replace(" ", "\\ ")
+        print(folder_name)
         extension = os.path.splitext(full_file_name)[1][1:]
         print("ex ", extension)
         if "php" != extension:
@@ -24,10 +27,12 @@ class PHPTools(sublime_plugin.EventListener):
         full_file_name_tmp = full_file_name + "-tmp"
         bin_php = s.get("php_path", "php")
         formatter_path = s.get("formatter_path", MY_PLUGIN + "/php.tools/codeFormatter.php")
-        cmd = "{} {} {} > {}; mv {} {};".format(
+        cmd = "\"{}\" \"{}\" \"{}\" > \"{}\"; \"{}\" -l \"{}\" && mv \"{}\" \"{}\";".format(
             bin_php,
             formatter_path,
             full_file_name,
+            full_file_name_tmp,
+            bin_php,
             full_file_name_tmp,
             full_file_name_tmp,
             full_file_name
