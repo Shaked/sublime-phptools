@@ -1,0 +1,284 @@
+#!/bin/bash
+# Copyright (c) 2014, Carlos C
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+#
+# 3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+ARCH=${BASH_VERSINFO[5]}
+CURPWD=$(php -r "echo realpath('.');")
+if [[ $ARCH == *apple* ]]; then
+DIRS="`find . -depth 1 -type d | egrep -iv "cover|vendor|web|fixtures|docs|^\.$" | php -r "echo implode(' ', array_map(function(\\\$v){return str_replace('$CURPWD', '.',realpath(\\\$v)); }, array_filter(explode(PHP_EOL, file_get_contents('php://stdin')))));"`"
+FMT_CLEAN="find . -ipath '*~' -delete"
+else
+DIRS="`find -maxdepth 1 -type d | egrep -iv "cover|vendor|web|fixtures|docs|^\.$" | xargs -l1 readlink -f | tr "\\n" " " | sed "s|$CURPWD/|./|g"`"
+FMT_CLEAN="find -iwholename '*~' -delete"
+fi
+FMTWORKERS=2
+
+CTAGS=false
+which ctags &> /dev/null
+if [ 0 == $? ];
+then
+	CTAGS_VERSION=$(ctags --version)
+	if [[ $CTAGS_VERSION == *Exuberant* ]];
+	then
+		CTAGS=true
+	fi
+fi
+
+PHPUNIT=false
+which vendor/bin/phpunit &> /dev/null
+if [ 0 == $? ];
+then
+	PHPUNIT=true
+fi
+
+FMT=false
+if [ -e codeFormatter.php ];
+then
+	FMT=true
+fi
+
+PHPDOC=false
+if [ -e vendor/bin/phpdoc.php ];
+then
+	PHPDOC=true
+fi
+
+function execute(){
+	echo "$0 [command]"
+	$CTAGS && echo "	ctags - generate ctags"
+	$PHPUNIT && echo "	test - execute PHPUnit"
+	$PHPUNIT && echo "	cover - execute PHPUnit with cover output"
+	$PHPDOC && echo "	doc - execute phpDocumentor"
+	$CTAGS && echo "	watch ctags - execute PHPUnit, but keeps watching for file changes to trigger ctags generator"
+	$PHPUNIT && echo "	watch test - execute PHPUnit, but keeps watching for file changes to trigger the test automatically"
+	$PHPUNIT && echo "	watch cover - execute PHPUnit with cover output, but keeps watching for file changes to trigger the test automatically"
+	$PHPDOC && echo "	watch doc - execute phpDocumentor, but keeps watching for file changes to trigger the generation automatically"
+	$FMT && echo "	fmt [filename] - format filename according to project formatting rules"
+	$FMT && echo "	fmt all - format all files according to project formatting rules"
+	$FMT && echo "	fmt clean - remove all backup files - *~"
+	$FMT && echo "	watch fmt [all|filename] - watch for changes and format according to project formatting rules"
+
+	exit 0
+}
+
+function update_phpunit_xml(){
+	#processIsolation=\"true\"\
+	phpunit_xml_template="\
+	<phpunit\
+	         xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\
+	         xsi:noNamespaceSchemaLocation=\"http://schema.phpunit.de/3.7/phpunit.xsd\"\
+	         colors=\"true\"\
+	         verbose=\"false\">\
+	         <testsuite>\
+	"
+	for i in $DIRS;
+	do
+		phpunit_xml_template="$phpunit_xml_template<directory suffix=\"_test.php\">$i</directory>"
+	done;
+	phpunit_xml_template="$phpunit_xml_template</testsuite>"
+
+	phpunit_xml_template="$phpunit_xml_template<filter>"
+	phpunit_xml_template="$phpunit_xml_template<whitelist processUncoveredFilesFromWhitelist=\"true\" >"
+	for i in $DIRS;
+	do
+		phpunit_xml_template="$phpunit_xml_template<directory suffix=\".php\">$i</directory>"
+	done;
+	phpunit_xml_template="$phpunit_xml_template<exclude>"
+	for i in $DIRS;
+	do
+		phpunit_xml_template="$phpunit_xml_template<directory suffix=\"_test.php\">$i</directory>"
+	done;
+	phpunit_xml_template="$phpunit_xml_template</exclude>"
+	phpunit_xml_template="$phpunit_xml_template</whitelist>"
+	phpunit_xml_template="$phpunit_xml_template</filter></phpunit>"
+
+	echo $phpunit_xml_template > phpunit.xml
+}
+
+WATCH=""
+if [ "watch" == "$1" ];
+then
+	WATCH="watch"
+	shift
+fi
+
+$CTAGS && if [ "ctags" == "$1" ] ;
+then
+	function execute(){
+		echo $DIRS;
+		nice -n 20 ctags --PHP-kinds=+cf \
+		--regex-PHP='/define\("([^ ]*)"/\1/d/' \
+		--regex-PHP="/define\('([^ ]*)'/\1/d/" \
+		--regex-PHP="/const ([^ ]*)/\1/d/" \
+		--regex-PHP='/trait ([^ ]*)/\1/c/' \
+		--regex-PHP='/final class ([^ ]*)/\1/c/' \
+		--regex-PHP='/final abstract class ([^ ]*)/\1/c/' \
+		--regex-PHP='/abstract class ([^ ]*)/\1/c/' \
+		--regex-PHP='/interface ([^ ]*)/\1/c/' \
+		--regex-PHP='/(public |static |abstract |protected |private |final public )+function ([^ (]*)/\2/f/' -R -f .tags-new $DIRS;
+		(cat .tags-new | sort -k1) &> .tags_sorted_by_file
+		mv .tags-new .tags;
+	}
+fi;
+
+$PHPUNIT && if [ "test" == "$1" ] ;
+then
+	update_phpunit_xml
+	shift
+	function execute(){
+		TEST=""
+		if [[ $1 == */* ]]; then
+			TEST="$1Test $1_test.php"
+			shift
+		elif [[ $1 == *\\* ]]; then
+			FN=${1//\\/\/}
+			TEST="$1Test ${FN}_test.php"
+			shift
+		fi
+		vendor/bin/phpunit $TEST "$@"
+	}
+fi;
+
+$PHPUNIT && if [ "cover" == "$1" ] ;
+then
+	update_phpunit_xml
+	shift
+	function execute(){
+		TEST=""
+		if [[ $1 == */* ]]; then
+			TEST="$1Test $1_test.php"
+			shift
+		elif [[ $1 == *\\* ]]; then
+			FN=${1//\\/\/}
+			TEST="$1Test ${FN}_test.php"
+			shift
+		fi
+		vendor/bin/phpunit --coverage-text --coverage-html=cover/ --coverage-clover=clover.xml --log-junit=junit.xml $TEST "$@"
+	}
+fi;
+
+
+$PHPDOC && if [ "doc" == "$1" ] ;
+then
+	function execute(){
+		NEW_DIRS=""
+		for i in $DIRS;
+		do
+			NEW_DIRS="-d $i $NEW_DIRS"
+		done;
+		php vendor/bin/phpdoc.php $NEW_DIRS -t docs/
+	}
+fi;
+
+$FMT && if [ "fmt" == "$1" ];
+then
+	if [ "" == "$2" ];
+	then
+		function execute(){
+			echo "Starting $FMTWORKERS workers..."
+			J=""
+			files=$( git status -s | grep -i "\.php$" | awk -F ' ' '{ print $2 } ' )
+			for line in $files
+			do
+				(php -l $line &> /dev/null) && (cp $line $line~; php codeFormatter.php $line > $line-formatted; (php -l $line-formatted &> /dev/null) && mv -f $line-formatted $line) && echo "Formatted $line" &
+				J="$J $!"
+				JCNT=`echo $J | wc -w`
+				if [ $JCNT -ge $FMTWORKERS ];
+				then
+					for jj in $J;
+					do
+						wait $jj;
+					done;
+					J=""
+				fi
+			done;
+			for jj in $J;
+			do
+				wait $jj;
+			done;
+		}
+	elif [ "clean" == "$2" ];
+	then
+		function execute(){
+			eval $FMT_CLEAN
+		}
+	elif [ "all" == "$2" ];
+	then
+		function execute(){
+			echo "Starting $FMTWORKERS workers..."
+			J=""
+			for i in $DIRS;
+			do
+				files=`find $i -ipath "*.php"`
+				for line in $files
+				do
+					( (php -l $line &> /dev/null) && (cp $line $line~; php codeFormatter.php $line > $line-formatted; (php -l $line-formatted &> /dev/null) && mv -f $line-formatted $line) && echo "Formatted $line" ) &
+					J="$J $!"
+					JCNT=`echo $J | wc -w`
+					if [ $JCNT -ge $FMTWORKERS ];
+					then
+						for jj in $J;
+						do
+							wait $jj;
+						done;
+						J=""
+					fi
+				done;
+			done;
+			for jj in $J;
+			do
+				wait $jj;
+			done;
+		}
+	else
+		line=$2
+		function execute(){
+			(php -l $line &> /dev/null) && (cp $line $line~; php codeFormatter.php $line > $line-formatted; (php -l $line-formatted &> /dev/null) && mv -f $line-formatted $line) && echo "Formatted $line"
+		}
+	fi
+
+fi
+
+sha=0
+previous_sha=0
+update_sha () {
+	command="ls -lR $DIRS | sha1sum"
+	sha=`bash -c "$command"`
+}
+changed () {
+	echo "Running... $1 $2";
+	time execute
+	previous_sha=$sha
+}
+compare () {
+	update_sha
+	if [[ $sha != $previous_sha ]] ;
+	then
+		changed;
+	fi
+}
+watch () {
+	while true; do
+		compare
+		read -s -t 1 && (
+			execute "$@"
+		)
+	done
+}
+
+if [ "watch" == "$WATCH" ];
+then
+	watch "$@"
+else
+	time execute "$@"
+fi
