@@ -47,8 +47,8 @@ if (!isset($testEnv)) {
 class CodeFormatter {
 	private $options = array(
 		"ADD_MISSING_BRACES" => true,
-		"ALIGN_ARRAY_ASSIGNMENT" => true,
-		"ALIGN_VAR_ASSIGNMENT" => true,
+		"ALIGN_ARRAY_ASSIGNMENT" => false,
+		"ALIGN_VAR_ASSIGNMENT" => false,
 		"CATCH_ALONG_CURLY" => true,
 		"ELSE_ALONG_CURLY" => true,
 		"INDENT_CASE" => true,
@@ -191,7 +191,8 @@ class CodeFormatter {
 		$in_for = false;
 		$in_for_context = false;
 		$in_function = false;
-		$inside_array_dereference = false;
+		$in_heredoc_context = false;
+		$inside_array_dereference = 0;
 		$space_after = false;
 		$space_after_t_use = false;
 		$space_before_bracket = false;
@@ -252,7 +253,7 @@ class CodeFormatter {
 						$this->set_indent(-1);
 						$in_concat = false;
 					}
-					$this->append_code($text.$this->get_crlf($this->options["LINE_AFTER_BREAK"] && $in_break).$this->get_crlf_indent($in_for));
+					$this->append_code($this->get_crlf($in_heredoc_context).$text.$this->get_crlf($this->options["LINE_AFTER_BREAK"] && $in_break).$this->get_crlf_indent($in_for));
 					while ($if_pending > 0) {
 						$text = $this->options["ADD_MISSING_BRACES"]?"}":"";
 						$this->set_indent(-1);
@@ -266,6 +267,9 @@ class CodeFormatter {
 							break;
 						}
 					}
+					if ($in_heredoc_context) {
+						$in_heredoc_context = false;
+					}
 					if ($this->for_idx == 0) {
 						$in_for = false;
 					}
@@ -273,7 +277,7 @@ class CodeFormatter {
 					$in_function = false;
 					break;
 				case ST_BRACKET_OPEN:
-					if (!$this->is_token(array(T_VARIABLE), true) && !$this->is_token(ST_BRACKET_CLOSE, true)) {
+					if (!$this->is_token(array(T_VARIABLE, T_STRING), true) && !$this->is_token(ST_BRACKET_CLOSE, true)) {
 						if ($this->is_token(ST_EQUAL, true) && !$this->is_token(ST_BRACKET_CLOSE) || $array_level > 0) {
 							$array_level++;
 							$arr_bracket["i".$array_level] = 0;
@@ -285,7 +289,7 @@ class CodeFormatter {
 							break;
 						}
 					} else {
-						$inside_array_dereference = true;
+						$inside_array_dereference++;
 					}
 					if ($this->is_token(array(T_DOUBLE_ARROW, T_RETURN), true) || $this->is_token(ST_EQUAL, true)) {
 						$space_before_bracket = true;
@@ -295,10 +299,10 @@ class CodeFormatter {
 					$space_before_bracket = false;
 					break;
 				case ST_BRACKET_CLOSE:
-					if (!$inside_array_dereference && $array_level > 0) {
+					if (0 == $inside_array_dereference && $array_level > 0) {
 						$arr_bracket["i".$array_level]--;
 						if ($arr_bracket["i".$array_level] == 0) {
-							$comma = substr(trim($this->code),-1) != "," && substr(trim($this->code),-1) != "[" && $this->options['VERTICAL_ARRAY']?",":"";
+							$comma = !$this->is_token(array(T_COMMENT, T_DOC_COMMENT), true) && substr(trim($this->code),-1) != "," && substr(trim($this->code),-1) != "[" && $this->options['VERTICAL_ARRAY']?",":"";
 							$this->set_indent(-1);
 							$this->append_code($comma.$this->get_crlf_indent().$text.$this->get_crlf_indent());
 							unset($arr_bracket["i".$array_level]);
@@ -306,7 +310,9 @@ class CodeFormatter {
 							break;
 						}
 					}
-					$inside_array_dereference = false;
+					if ($inside_array_dereference > 0) {
+						$inside_array_dereference--;
+					}
 					$this->append_code($this->get_space($this->options["SPACE_INSIDE_PARENTHESES"]).$text.$this->get_space($this->options["SPACE_OUTSIDE_PARENTHESES"]));
 					break;
 				case ST_PARENTHESES_OPEN:
@@ -333,7 +339,7 @@ class CodeFormatter {
 						if (isset($arr_parentheses["i".$array_level])) {
 							$arr_parentheses["i".$array_level]--;
 							if ($arr_parentheses["i".$array_level] == 0) {
-								$comma = substr(trim($this->code),-1) != "," && $this->options['VERTICAL_ARRAY']?",":"";
+								$comma = !$this->is_token(array(T_COMMENT, T_DOC_COMMENT), true) && substr(trim($this->code),-1) != "," && $this->options['VERTICAL_ARRAY']?",":"";
 								$this->set_indent(-1);
 								$this->append_code($comma.$this->get_crlf_indent().$text.$this->get_crlf_indent());
 								unset($arr_parentheses["i".$array_level]);
@@ -342,7 +348,7 @@ class CodeFormatter {
 							}
 						}
 					}
-					$this->append_code($this->get_space($this->options["SPACE_INSIDE_PARENTHESES"]).$text.$this->get_space($this->options["SPACE_OUTSIDE_PARENTHESES"]));
+					$this->append_code($this->get_crlf($in_heredoc_context).$this->get_space($this->options["SPACE_INSIDE_PARENTHESES"]).$text.$this->get_space($this->options["SPACE_OUTSIDE_PARENTHESES"]));
 					if ($if_level > 0) {
 						if (isset($arr_parentheses["i".$array_level])) {
 							$if_parentheses["i".$if_level]--;
@@ -357,6 +363,9 @@ class CodeFormatter {
 								$if_level--;
 							}
 						}
+					}
+					if ($in_heredoc_context) {
+						$in_heredoc_context = false;
 					}
 					break;
 				case ST_COMMA:
@@ -539,9 +548,15 @@ class CodeFormatter {
 					$this->append_code($this->get_space($this->options["SPACE_AROUND_ASSIGNMENT"]).$text);
 					break;
 				case T_END_HEREDOC:
-					$this->append_code($this->get_crlf().$text.$this->get_crlf_indent());
+					$this->append_code($this->get_crlf().$text.$this->get_crlf().$this->get_crlf_indent(), false);
+					$in_heredoc_context = true;
 					break;
 				case T_COMMENT:
+					if ('//' == substr($text, 0, 2)) {
+						$text = '/*'.trim(str_replace(['/*', '*/'], '', substr($text, 2))).'*/';
+					} elseif ('#' == substr($text, 0, 1)) {
+						$text = '/*'.trim(str_replace(['/*', '*/'], '', substr($text, 1))).'*/';
+					}
 				case T_DOC_COMMENT:
 					if (is_array($this->tkns[$index-1])) {
 						$pad = $this->tkns[$index-1][1];
@@ -699,7 +714,7 @@ class CodeFormatter {
 					$added_braces = $this->is_token(ST_SEMI_COLON, true) && $this->options["ADD_MISSING_BRACES"];
 					$condition = $this->options['ELSE_ALONG_CURLY'] && ($this->is_token(ST_CURLY_CLOSE, true) || $added_braces);
 					$this->append_code($this->get_space($condition).$text, $condition);
-					if (!$this->is_token(ST_CURLY_OPEN) && !$this->is_token(array(T_IF))) {
+					if (!$this->is_token(ST_COLON) && !$this->is_token(ST_CURLY_OPEN) && !$this->is_token(array(T_IF))) {
 						$text = $this->options["ADD_MISSING_BRACES"]?"{":"";
 						$this->set_indent(+1);
 						$this->append_code((!$this->options["LINE_BEFORE_CURLY"] || $text == ""?' ':$this->get_crlf_indent(false,-1)).$text.$this->get_crlf_indent());
