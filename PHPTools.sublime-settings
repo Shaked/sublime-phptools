@@ -1,4 +1,5 @@
 {
+	// "debug":"True|False"
     // "php_path":"/your/path/to/bin/php",
     // "formatter_path":"/your/path/to/php/formatter"
 }

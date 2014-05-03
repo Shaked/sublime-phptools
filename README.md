@@ -8,6 +8,7 @@ Sublime plugin for [php.tools](https://github.com/dericofilho/php.tools)
 ### Settings 
 
 ```
+    "debug":"True|False"
     "php_path":"/your/path/to/bin/php",
     "formatter_path":"/your/path/to/php/formatter"
 ```
