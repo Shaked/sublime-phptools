@@ -50,7 +50,6 @@ class CodeFormatter {
 		"ALIGN_ASSIGNMENTS" => true,
 		"ORDER_USE" => true,
 		"REMOVE_UNUSED_USE_STATEMENTS" => true,
-		"SPACE_INSIDE_FOR" => false,
 	);
 	private $indent_size = 1;
 	private $indent_char = "\t";
@@ -425,7 +424,17 @@ class CodeFormatter {
 					$this->append_code($text, false);
 					break;
 				case T_WHITESPACE:
-					continue;
+					$redundant = "";
+					$matches = 0;
+					$lines = preg_match_all("/\r?\n/", $text, $matches);
+					$lines = $lines > 1?1:0;
+					$redundant = $lines > 0?str_repeat($this->new_line, $lines):"";
+					$current_indent = $this->get_indent();
+					if (substr($this->code, strlen($current_indent)*-1) == $current_indent && $lines > 0) {
+						$redundant .= $current_indent;
+					}
+					$this->append_code($redundant.trim($text).$this->debug("[WS:".$lines."]"), false);
+					break;
 				case ST_SEMI_COLON:
 					if ($this->is_token(array(T_END_HEREDOC), true)) {
 						$this->append_code($this->get_crlf_indent().$text.$this->get_crlf_indent(), true);
@@ -716,7 +725,7 @@ class CodeFormatter {
 		if ($this->for_idx == 0 || !$in_for) {
 			return $this->get_crlf().$this->get_indent($increment);
 		} else {
-			return $this->get_space($this->options["SPACE_INSIDE_FOR"]);
+			return $this->get_space(false);
 		}
 	}
 	private function get_crlf($true = true) {
