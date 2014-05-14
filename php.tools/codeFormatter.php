@@ -1,6 +1,4 @@
 <?php
-//Inspired by http://phpstylist.sourceforge.net/
-//
 //Copyright (c) 2014, Carlos C
 //All rights reserved.
 //
@@ -95,6 +93,7 @@ class CodeFormatter {
 			}
 		}
 
+
 		natcasesort($use_stack);
 		$alias_list = [];
 		$alias_count = [];
@@ -152,6 +151,7 @@ class CodeFormatter {
 		$if_pending = 0;
 		$in_array_counter = 0;
 		$in_attribution_counter = 0;
+		$in_bracket_counter = 0;
 		$in_call_context = false;
 		$in_call_counter = 0;
 		$in_case_counter = 0;
@@ -177,6 +177,14 @@ class CodeFormatter {
 				}
 			}
 			switch ($id) {
+				case ST_BRACKET_OPEN:
+					$this->append_code($text, false);
+					$in_bracket_counter++;
+					break;
+				case ST_BRACKET_CLOSE:
+					$this->append_code($text, false);
+					$in_bracket_counter--;
+					break;
 				case ST_QUESTION:
 					$this->append_code($text, false);
 					$in_question_counter++;
@@ -293,14 +301,14 @@ class CodeFormatter {
 						}
 						break;
 					} elseif ($this->is_token(array(T_VARIABLE))) {
-						$this->append_code($text.$this->get_space(), false);
+						$this->append_code($text.$this->debug('[Arr.Var]').$this->get_space(), false);
 						break;
 					} elseif ($this->is_token(array(T_RETURN, T_YIELD, T_COMMENT, T_DOC_COMMENT), true)) {
-						$this->append_code($text, false);
+						$this->append_code($text.$this->debug('[Arr.Ret]'), false);
 						break;
-					} elseif ($in_array_counter > 0) {
+					} elseif ($in_array_counter > 0 && !$this->is_token(array(T_DOUBLE_ARROW), true)) {
 						$in_array_counter++;
-						$this->append_code($this->get_crlf_indent().$text);
+						$this->append_code($this->get_crlf_indent().$text.$this->debug('[Arr.ArrCounter>0]'));
 						break;
 					} elseif ($in_function_counter > 0) {
 						$condition = $this->is_token(ST_EQUAL, true);
@@ -322,7 +330,7 @@ class CodeFormatter {
 					$this->append_code($text);
 					break;
 				case ST_COMMA:
-					if ($in_array_counter > 0) {
+					if ($in_array_counter > 0 && 0 == $in_bracket_counter) {
 						$this->append_code($text.$this->get_crlf_indent());
 						break;
 					} else {
@@ -873,5 +881,6 @@ class CodeFormatter {
 	}
 }
 class SurrogateToken {
+
 
 }
