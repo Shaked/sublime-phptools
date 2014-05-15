@@ -1,4 +1,6 @@
 <?php
+//Inspired by http://phpstylist.sourceforge.net/
+//
 //Copyright (c) 2014, Carlos C
 //All rights reserved.
 //
@@ -45,24 +47,24 @@ if (!isset($testEnv)) {
 }
 class CodeFormatter {
 	private $options = array(
-		"ALIGN_ASSIGNMENTS" => true,
-		"ORDER_USE" => true,
+		"ALIGN_ASSIGNMENTS"            => true,
+		"ORDER_USE"                    => true,
 		"REMOVE_UNUSED_USE_STATEMENTS" => true,
 	);
 	private $indent_size = 1;
 	private $indent_char = "\t";
-	private $block_size = 1;
-	private $new_line = "\n";
-	private $indent = 0;
-	private $for_idx = 0;
-	private $code = '';
-	private $ptr = 0;
-	private $tkns = 0;
-	private $debug = DEBUG;
+	private $block_size  = 1;
+	private $new_line    = "\n";
+	private $indent      = 0;
+	private $for_idx     = 0;
+	private $code        = '';
+	private $ptr         = 0;
+	private $tkns        = 0;
+	private $debug       = DEBUG;
 	private function orderUseClauses($source = '') {
 		$use_stack = [];
 		$tokens = token_get_all($source);
-		$new_tokens = [];
+		$new_tokens  = [];
 		$next_tokens = [];
 		while (list(, $pop_token) = each($tokens)) {
 			$next_tokens[] = $pop_token;
@@ -95,13 +97,12 @@ class CodeFormatter {
 
 
 		natcasesort($use_stack);
-		$alias_list = [];
+		$alias_list  = [];
 		$alias_count = [];
 		foreach ($use_stack as $use) {
 			if (false !== stripos($use, ' as ')) {
 				$alias = substr(strstr($use, ' as '), strlen(' as '), -1);
-			}
-			else {
+			} else {
 				$alias = basename(str_replace('\\', '/', trim(substr($use, strlen('use'), -1))));
 			}
 			$alias = strtolower($alias);
@@ -147,27 +148,27 @@ class CodeFormatter {
 		}
 		$this->tkns = token_get_all($source);
 		$artificial_curly_close = false;
-		$artificial_curly_open = false;
-		$if_pending = 0;
-		$in_array_counter = 0;
+		$artificial_curly_open  = false;
+		$if_pending             = 0;
+		$in_array_counter       = 0;
 		$in_attribution_counter = 0;
-		$in_bracket_counter = 0;
-		$in_call_context = false;
-		$in_call_counter = 0;
-		$in_case_counter = 0;
-		$in_do_counter = 0;
-		$in_elseif_counter = 0;
-		$in_for_counter = 0;
-		$in_foreach_counter = 0;
-		$in_function_counter = 0;
-		$in_curly_block = 0;
-		$in_if_counter = 0;
+		$in_bracket_counter     = 0;
+		$in_call_context        = false;
+		$in_call_counter        = 0;
+		$in_case_counter        = 0;
+		$in_do_counter          = 0;
+		$in_elseif_counter      = 0;
+		$in_for_counter         = 0;
+		$in_foreach_counter     = 0;
+		$in_function_counter    = 0;
+		$in_curly_block         = 0;
+		$in_if_counter          = 0;
 		$in_parentheses_counter = 0;
-		$in_question_counter = 0;
-		$in_switch_counter = 0;
+		$in_question_counter    = 0;
+		$in_switch_counter      = 0;
 		$in_switch_curly_block = array();
 		$in_while_counter = 0;
-		$way_clear = true;
+		$way_clear        = true;
 		while (list($index, $token) = each($this->tkns)) {
 			list($id, $text) = $this->get_token($token);
 			$this->ptr = $index;
@@ -262,7 +263,9 @@ class CodeFormatter {
 				case T_OBJECT_CAST:
 				case T_STRING_CAST:
 				case T_UNSET_CAST:
-					if ($this->is_token(array(T_DOUBLE_ARROW), true) || $this->is_token(ST_EQUAL, true)) {
+					if ($this->is_token(array(T_COMMENT, T_DOC_COMMENT), true)) {
+						$this->append_code($this->get_crlf_indent().$text.$this->get_space());
+					} elseif ($this->is_token(array(T_DOUBLE_ARROW), true) || $this->is_token(ST_EQUAL, true)) {
 						$this->append_code($this->get_space().$text.$this->get_space());
 					} else {
 						$this->append_code($text.$this->get_space());
@@ -270,25 +273,17 @@ class CodeFormatter {
 					break;
 				case T_COMMENT:
 				case T_DOC_COMMENT:
-					if ($this->is_token(ST_COMMA, true)) {
-						if ('//' == substr($text, 0, 2)) {
-							$text = '/*'.trim(substr($text, 2)).'*/';
-						} elseif ('#' == substr($text, 0, 1)) {
-							$text = '/*'.trim(substr($text, 1)).'*/';
-						}
-						$this->append_code($this->get_crlf_indent().$text.$this->debug('[//.comma]').$this->get_crlf_indent(), false);
-					} elseif ($this->is_token(ST_COMMA)) {
-						if ('//' == substr($text, 0, 2)) {
-							$text = '/*'.trim(substr($text, 2)).'*/';
-						} elseif ('#' == substr($text, 0, 1)) {
-							$text = '/*'.trim(substr($text, 1)).'*/';
-						}
-						$this->append_code($this->get_crlf_indent().$text.$this->debug('[//.comma]').$this->get_crlf_indent(), false);
-					} else {
-						$this->append_code(trim($text).$this->debug('[//.else]').$this->get_crlf_indent(), false);
+					list($pt_id, $pt_text) = $this->inspect_token(-1);
+					if (T_WHITESPACE == $pt_id && substr_count($pt_text, PHP_EOL) > 0 && substr_count($text, PHP_EOL) > 0) {
+						$this->append_code($this->get_crlf_indent().rtrim($text).$this->debug('[//.alone]').$this->get_crlf_indent(), true);
+						break;
 					}
+					$this->append_code(trim($text).$this->debug('[//.else]').$this->get_crlf_indent(), false);
 					break;
 				case T_ARRAY:
+					$pt_id   = null;
+					$pt_text = null;
+					list($pt_id, $pt_text) = $this->inspect_token(-1);
 					if ($in_call_context) {
 						if ($this->is_token(ST_COMMA, true) && $this->is_token(array(T_VARIABLE))) {
 							$this->append_code($this->get_space().$text.$this->debug('[Arr.Cast]').$this->get_space());
@@ -306,7 +301,7 @@ class CodeFormatter {
 					} elseif ($this->is_token(array(T_RETURN, T_YIELD, T_COMMENT, T_DOC_COMMENT), true)) {
 						$this->append_code($text.$this->debug('[Arr.Ret]'), false);
 						break;
-					} elseif ($in_array_counter > 0 && !$this->is_token(array(T_DOUBLE_ARROW), true)) {
+					} elseif ($in_array_counter > 0 && !$this->is_token(array(T_DOUBLE_ARROW), true) && (T_WHITESPACE == $pt_id && substr_count($pt_text, PHP_EOL) > 0)) {
 						$in_array_counter++;
 						$this->append_code($this->get_crlf_indent().$text.$this->debug('[Arr.ArrCounter>0]'));
 						break;
@@ -316,10 +311,10 @@ class CodeFormatter {
 						break;
 					} elseif ($in_attribution_counter > 0) {
 						$in_array_counter++;
-						if ($this->is_token(ST_PARENTHESES_OPEN, true)) {
-							$this->append_code($text);
+						if ($this->is_token(ST_PARENTHESES_OPEN, true) || $this->is_token(ST_BRACKET_OPEN, true)) {
+							$this->append_code($text.$this->debug('[AR.at]'));
 						} else {
-							$this->append_code($this->get_space().$text);
+							$this->append_code($this->get_space().$text.$this->debug('[AR.at.else]'));
 						}
 						break;
 					} elseif (0 == $in_array_counter && $this->is_token(ST_PARENTHESES_OPEN)) {
@@ -327,10 +322,16 @@ class CodeFormatter {
 						$this->append_code($this->get_crlf_indent().$text.$this->debug('[AR.++]'));
 						break;
 					}
-					$this->append_code($text);
+					$this->append_code($text.$this->debug('[AR.else]'));
 					break;
 				case ST_COMMA:
-					if ($in_array_counter > 0 && 0 == $in_bracket_counter) {
+					$nt_id   = null;
+					$nt_text = null;
+					list($nt_id, $nt_text) = $this->inspect_token();
+					if ($this->is_token(array(T_COMMENT, T_DOC_COMMENT), true)) {
+						$this->append_code($this->get_crlf_indent().$text.$this->get_space());
+						break;
+					} elseif ($in_array_counter > 0 && 0 == $in_bracket_counter && T_WHITESPACE == $nt_id && substr_count($nt_text, PHP_EOL) > 0) {
 						$this->append_code($text.$this->get_crlf_indent());
 						break;
 					} else {
@@ -433,7 +434,7 @@ class CodeFormatter {
 					break;
 				case T_WHITESPACE:
 					$redundant = "";
-					$matches = 0;
+					$matches   = 0;
 					$lines = preg_match_all("/\r?\n/", $text, $matches);
 					$lines = $lines > 1?1:0;
 					$redundant = $lines > 0?str_repeat($this->new_line, $lines):"";
@@ -449,7 +450,11 @@ class CodeFormatter {
 						break;
 					} elseif (0 == $in_for_counter && $in_attribution_counter > 0) {
 						$in_attribution_counter--;
-						$this->append_code($text.$this->debug('[OFF.at]').$this->get_crlf_indent(), false);
+						if ($this->is_token(array(T_COMMENT, T_DOC_COMMENT))) {
+							$this->append_code($text.$this->debug('[OFF.at.//]').$this->get_space(), false);
+						} else {
+							$this->append_code($text.$this->debug('[OFF.at.ELSE]').$this->get_crlf_indent(), false);
+						}
 						if ($this->is_token(array(T_ELSE, T_ELSEIF)) && $if_pending > 0) {
 							$if_pending--;
 							$this->set_indent(-1);
@@ -510,11 +515,15 @@ class CodeFormatter {
 					} elseif ($in_elseif_counter > 0) {
 						$in_elseif_counter--;
 						$this->set_indent(+1);
-						$this->append_code($this->get_space().$text.$this->get_crlf_indent(), false);
+						$this->append_code($this->get_space().$text.$this->debug('[{.elseif]').$this->get_crlf_indent(), false);
 					} elseif ($in_for_counter > 0) {
 						$in_for_counter--;
 						$this->set_indent(+1);
-						$this->append_code($this->get_space().$text.$this->get_crlf_indent(), false);
+						$this->append_code($this->get_space().$text.$this->debug('[{.for]').$this->get_crlf_indent(), false);
+					} elseif ($in_foreach_counter > 0) {
+						$in_foreach_counter--;
+						$this->set_indent(+1);
+						$this->append_code($this->get_space().$text.$this->debug('[{.foreach]').$this->get_crlf_indent(), false);
 					} elseif ($this->is_token(array(T_COMMENT, T_DOC_COMMENT), true) && $artificial_curly_open) {
 						$artificial_curly_open = false;
 						$this->append_code($this->get_crlf_indent(), false);
@@ -523,7 +532,7 @@ class CodeFormatter {
 						}
 					} else {
 						$this->set_indent(+1);
-						$this->append_code($this->get_space().$text.$this->get_crlf_indent(), false);
+						$this->append_code($this->get_space().$text.$this->debug('[{.else]').$this->get_crlf_indent(), false);
 					}
 					break;
 				case ST_CURLY_CLOSE:
@@ -574,13 +583,16 @@ class CodeFormatter {
 					}
 					break;
 				case ST_PARENTHESES_OPEN:
+					$nt_id   = null;
+					$nt_text = null;
+					list($nt_id, $nt_text) = $this->inspect_token();
 					$in_parentheses_counter++;
 					$this->append_code($text.$this->debug('[CC.'.(1*$in_call_context).']').$this->debug('[AR.'.(1*$in_array_counter).']'), false);
 					if (!$in_call_context && $this->is_token(array(T_STRING, T_FOR, T_FOREACH, T_WHILE, T_IF, T_ELSEIF), true)) {
 						$in_call_context = true;
 						$in_call_counter = $in_parentheses_counter-1;
 						$this->append_code($this->debug('[ON.'.$in_call_counter.']'), false);
-					} elseif (!$in_call_context && $in_array_counter > 0 && $in_parentheses_counter <= $in_array_counter) {
+					} elseif (!$in_call_context && $in_array_counter > 0 && $in_parentheses_counter <= $in_array_counter && T_WHITESPACE == $nt_id && substr_count($nt_text, PHP_EOL) > 0) {
 						$this->set_indent(+1);
 						$this->append_code($this->get_crlf_indent());
 					}
@@ -589,6 +601,9 @@ class CodeFormatter {
 					}
 					break;
 				case ST_PARENTHESES_CLOSE:
+					$pt_id   = null;
+					$pt_text = null;
+					list($pt_id, $pt_text) = $this->inspect_token(-1);
 					$in_parentheses_counter--;
 					if ($in_call_context && $in_parentheses_counter == $in_call_counter) {
 						$in_call_context = false;
@@ -627,16 +642,32 @@ class CodeFormatter {
 							$in_attribution_counter--;
 						}
 						break;
-					} elseif ($in_array_counter > 0 && $in_parentheses_counter < $in_array_counter) {
+					} elseif ($in_array_counter > 0 && $in_parentheses_counter < $in_array_counter && T_WHITESPACE == $pt_id && substr_count($pt_text, PHP_EOL) > 0) {
 						$this->set_indent(-1);
 						$tmp_code = trim($this->code);
 						if (!$this->is_token(array(T_DOC_COMMENT, T_COMMENT), true) && ',' != substr($tmp_code, -1, 1) && '(' != substr($tmp_code, -1, 1) && ')' != substr($tmp_code, -1, 1)) {
 							$this->append_code(',');
-							$this->append_code($this->get_crlf_indent().$text.$this->debug('[).Arr>0.,:"'.substr($tmp_code, -1, 1).'"]'), false);
+							$this->append_code($this->get_crlf_indent().$text.$this->debug('[).Arr>0.ln.,:"'.substr($tmp_code, -1, 1).'"]'), false);
+						} elseif ('(' == substr($tmp_code, -1, 1)) {
+							$this->append_code($text.$this->debug('[).Arr>0.ln.substr")":"'.substr($tmp_code, -1, 1).'"]'), true);
+						} else {
+							$this->append_code($this->get_crlf_indent().$text.$this->debug('[).Arr>0.ln:"'.substr($tmp_code, -1, 1).'"]'), true);
+						}
+						$in_array_counter--;
+						break;
+					} elseif ($in_array_counter > 0 && $in_parentheses_counter < $in_array_counter) {
+						$tmp_code = trim($this->code);
+						if (!$this->is_token(array(T_DOC_COMMENT, T_COMMENT), true) && ',' != substr($tmp_code, -1, 1) && '(' != substr($tmp_code, -1, 1) && ')' != substr($tmp_code, -1, 1)) {
+							$this->append_code($text.$this->debug('[).Arr>0.,:"'.substr($tmp_code, -1, 1).'"]'), false);
 						} elseif ('(' == substr($tmp_code, -1, 1)) {
 							$this->append_code($text.$this->debug('[).Arr>0.substr")":"'.substr($tmp_code, -1, 1).'"]'), true);
+						} elseif (!$this->is_token(array(T_DOC_COMMENT, T_COMMENT), true) && T_WHITESPACE == $pt_id && substr_count($pt_text, PHP_EOL) > 0) {
+							$this->append_code($this->get_crlf_indent().$text.$this->debug('[).Arr>0(ln):"'.substr($tmp_code, -1, 1).'"]'), true);
+						} elseif ($this->is_token(array(T_DOC_COMMENT, T_COMMENT), true)) {
+							$this->set_indent(-1);
+							$this->append_code($this->get_crlf_indent().$text.$this->debug('[).Arr>0(//):"'.substr($tmp_code, -1, 1).'"]'), true);
 						} else {
-							$this->append_code($this->get_crlf_indent().$text.$this->debug('[).Arr>0:"'.substr($tmp_code, -1, 1).'"]'), true);
+							$this->append_code($text.$this->debug('[).Arr>0:"'.substr($tmp_code, -1, 1).'"]'), true);
 						}
 						$in_array_counter--;
 						break;
@@ -697,7 +728,15 @@ class CodeFormatter {
 					$this->append_code($this->get_crlf_indent().$text.$this->get_space());
 					break;
 				case T_OBJECT_OPERATOR:
-					$this->append_code($text.$this->debug("[ObjOp]"), false);
+					$pt_id   = null;
+					$pt_text = null;
+					list($pt_id, $pt_text) = $this->inspect_token(-1);
+					$prev_text = '';
+					if (T_WHITESPACE == $pt_id && substr_count($pt_text, PHP_EOL) > 0) {
+						$tmp = ltrim(str_replace([PHP_EOL, "\n", "\r\n", "\r"], '', $pt_text));
+						$prev_text = $this->get_crlf_indent().$tmp;
+					}
+					$this->append_code($prev_text.$text.$this->debug("[ObjOp]"), false);
 					break;
 				default:
 					$this->append_code($text.$this->debug("[Default:".$id.":".(is_numeric($id)?token_name($id):$id)."]"), false);
@@ -751,6 +790,9 @@ class CodeFormatter {
 			$this->indent = 0;
 		}
 	}
+	private function inspect_token($delta = 1) {
+		return $this->get_token($this->tkns[$this->ptr+$delta]);
+	}
 	private function is_token($token, $prev = false, $i = 99999, $idx = false) {
 		if ($i == 99999) {
 			$i = $this->ptr;
@@ -787,92 +829,68 @@ class CodeFormatter {
 		}
 		return false;
 	}
-	private function process_block($current_block_name) {
-		if (!is_null($current_block_name)) {
-			$matches = null;
-			preg_match_all('/\$.+'.preg_quote($current_block_name).'/', $this->code, $matches);
-			$biggest = 0;
-			foreach ($matches[0] as $match) {
-				$len = strlen(str_replace($current_block_name, '', $match));
-				$biggest = max($biggest, $len);
-			}
-			foreach ($matches[0] as $match) {
-				$len = strlen($match)-strlen($current_block_name);
-				$ws = str_repeat(' ', max($biggest-$len+1, 0));
-				$this->code = preg_replace('/'.preg_quote($current_block_name).'/', $ws, $this->code, 1);
-			}
-			$this->code = str_replace($current_block_name, '', $this->code);
-		}
-	}
 	private function align_operators() {
 		if (!$this->options['ALIGN_ASSIGNMENTS']) {
 			return $this->code;
 		}
-		$this->tkns = token_get_all($this->code);
-		$this->code = '';
-		$bracket_context_counter = 0;
-		$current_block_name = null;
-		$parentheses_context_counter = 0;
-		foreach ($this->tkns as $index => $token) {
-			list($id, $text) = $this->get_token($token);
-			$this->ptr = $index;
-			switch ($id) {
-				case ST_EQUAL:
-					if (!is_null($current_block_name) && 0 == $parentheses_context_counter && 0 == $bracket_context_counter) {
-						$this->append_code($current_block_name, false);
-					}
-					$this->append_code($text, false);
-					break;
-				case ST_BRACKET_OPEN:
-					$bracket_context_counter++;
-					$this->append_code($text, false);
-					break;
-				case ST_BRACKET_CLOSE:
-					$bracket_context_counter--;
-					$this->append_code($text, false);
-					break;
-				case T_COMMENT:
-				case T_DOC_COMMENT:
-					$this->process_block($current_block_name);
-					$current_block_name = null;
-					$this->append_code($text, false);
-					break;
-				case T_SWITCH:
-				case T_IF:
-				case T_FOR:
-				case T_FUNCTION:
-					if (0 == $bracket_context_counter) {
-						$parentheses_context_counter++;
-						$this->process_block($current_block_name);
-						$current_block_name = null;
-					}
-					$this->append_code($text, false);
-					break;
-				case ST_PARENTHESES_CLOSE:
-					if (0 == $bracket_context_counter) {
-						$parentheses_context_counter--;
-					}
-					$this->append_code($text, false);
-					break;
-				case T_VARIABLE:
-					if (0 == $parentheses_context_counter && 0 == $bracket_context_counter) {
-						if (is_null($current_block_name)) {
-							$current_block_name = "\0\0\0".uniqid()."\0\0\0";
-						}
-					}
-					$this->append_code($text, false);
-					break;
-				case T_WHITESPACE:
-					if (!is_null($current_block_name) && $this->is_token(ST_EQUAL) && 0 == $parentheses_context_counter && 0 == $bracket_context_counter) {
-						break;
-					}
-				default:
-					$this->append_code($text, false);
-					break;
+		$lines = explode($this->new_line, $this->code);
+		$lines_with_equals = [];
+		$block_count       = 0;
+		foreach ($lines as $idx => $line) {
+			if (1 == substr_count($line, '=') && 0 == substr_count($line, '==') && 0 == substr_count($line, '(') && 0 == substr_count($line, '.=') && 0 == substr_count($line, '+=') && 0 == substr_count($line, '-=') && 0 == substr_count($line, '*=') && 0 == substr_count($line, '&=') && 0 == substr_count($line, '|=') && 0 == substr_count($line, '>=') && 0 == substr_count($line, '!=') && 0 == substr_count($line, '<=') && 0 == substr_count($line, '<<=') && 0 == substr_count($line, '>>=') && 0 == substr_count($line, '^=') && 0 == substr_count($line, '%=')) {
+				$lines_with_equals[$block_count][] = $idx;
+			} else {
+				$block_count++;
 			}
 		}
-		$this->process_block($current_block_name);
-		return $this->code;
+
+		foreach ($lines_with_equals as $group) {
+			if (1 == sizeof($group)) {
+				continue;
+			}
+			$farthest_equals_sign = 0;
+			foreach ($group as $idx) {
+				$farthest_equals_sign = max($farthest_equals_sign, strpos($lines[$idx], '='));
+			}
+			foreach ($group as $idx) {
+				$line = $lines[$idx];
+				$current_equals = strpos($line, '=');
+				$delta = abs($farthest_equals_sign-$current_equals);
+				if ($delta > 0) {
+					$line = preg_replace('/=/', str_repeat(' ', $delta).'=', $line, 1);
+					$lines[$idx] = $line;
+				}
+			}
+		}
+
+		$lines_with_obj_operator = [];
+		$block_count             = 0;
+		foreach ($lines as $idx => $line) {
+			if (substr_count($line, '->') > 0 && 0 == substr_count($line, '{') && 0 == substr_count($line, '=>') && 0 == substr_count($line, '=')) {
+				$lines_with_obj_operator[$block_count][] = $idx;
+			} else {
+				$block_count++;
+			}
+		}
+		foreach ($lines_with_obj_operator as $group) {
+			if (1 == sizeof($group)) {
+				continue;
+			}
+			$farthest_obj_op = 0;
+			foreach ($group as $idx) {
+				$farthest_obj_op = max($farthest_obj_op, strpos($lines[$idx], '->'));
+			}
+			foreach ($group as $idx) {
+				$line = $lines[$idx];
+				$current_equals = strpos($line, '->');
+				$delta = abs($farthest_obj_op-$current_equals);
+				if ($delta > 0) {
+					$line = preg_replace('/->/', str_repeat(' ', $delta).'->', $line, 1);
+					$lines[$idx] = $line;
+				}
+			}
+		}
+		return implode($this->new_line, $lines);
 	}
 	private function debug($str) {
 		if ($this->debug) {
