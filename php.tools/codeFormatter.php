@@ -48,7 +48,8 @@ if (!isset($testEnv)) {
 class CodeFormatter {
 	const ALIGNABLE_COMMENT = "\x2 FMT \x3";
 	const ALIGNABLE_OBJOP   = "\x2 OBJOP%d \x3";
-	private $options = array(
+	const ALIGNABLE_EQUAL   = "\x2 EQUAL%d \x3";
+	private $options        = array(
 		"ALIGN_ASSIGNMENTS"            => true,
 		"ORDER_USE"                    => true,
 		"REMOVE_UNUSED_USE_STATEMENTS" => true,
@@ -64,8 +65,8 @@ class CodeFormatter {
 	private $tkns        = 0;
 	private $debug       = DEBUG;
 	private function orderUseClauses($source = '') {
-		$use_stack = [];
-		$tokens = token_get_all($source);
+		$use_stack   = [];
+		$tokens      = token_get_all($source);
 		$new_tokens  = [];
 		$next_tokens = [];
 		while (list(, $pop_token) = each($tokens)) {
@@ -88,7 +89,7 @@ class CodeFormatter {
 						}
 					}
 					$use_stack[] = $use_item;
-					$token = new SurrogateToken();
+					$token       = new SurrogateToken();
 				}
 				$new_tokens[] = $token;
 				if (T_CLASS == $id || T_FUNCTION == $id) {
@@ -106,8 +107,8 @@ class CodeFormatter {
 			} else {
 				$alias = basename(str_replace('\\', '/', trim(substr($use, strlen('use'), -1))));
 			}
-			$alias = strtolower($alias);
-			$alias_list[$alias] = strtolower($use);
+			$alias               = strtolower($alias);
+			$alias_list[$alias]  = strtolower($use);
 			$alias_count[$alias] = 0;
 		}
 		$return = '';
@@ -145,7 +146,7 @@ class CodeFormatter {
 	}
 	public function formatCode($source = '') {
 		$source = $this->two_commands_in_same_line($source);
-		$tmp = $this->add_missing_curly_braces($source);
+		$tmp    = $this->add_missing_curly_braces($source);
 		while (true) {
 			$source = $this->add_missing_curly_braces($tmp);
 			if ($source == $tmp) {
@@ -167,7 +168,8 @@ class CodeFormatter {
 		}
 		$source = $this->eliminate_duplicated_empty_lines($source);
 		if ($this->options['ALIGN_ASSIGNMENTS']) {
-			$source = $this->align_operators($source);
+			$source = $this->align_equals($source);
+			$source = $this->align_double_arrow($source);
 		}
 		return implode(
 			$this->new_line,
@@ -204,7 +206,7 @@ class CodeFormatter {
 					}
 					$lines = explode($this->new_line, $text);
 					$lines = array_map(function ($v) {
-							$v = ltrim($v);
+							$v   = ltrim($v);
 							if ('*' == substr($v, 0, 1)) {
 								$v = ' '.$v;
 							}
@@ -275,7 +277,7 @@ class CodeFormatter {
 	}
 
 	private function merge_curly_close_and_do_while($source) {
-		$this->tkns = token_get_all($source);
+		$this->tkns          = token_get_all($source);
 		$this->code          = '';
 		$in_do_while_context = 0;
 		while (list($index, $token) = each($this->tkns)) {
@@ -301,7 +303,7 @@ class CodeFormatter {
 	}
 
 	private function merge_double_arrow_and_array($source) {
-		$this->tkns = token_get_all($source);
+		$this->tkns          = token_get_all($source);
 		$this->code          = '';
 		$in_do_while_context = 0;
 		while (list($index, $token) = each($this->tkns)) {
@@ -323,7 +325,7 @@ class CodeFormatter {
 	}
 	//extra_comma_in_array
 	private function extra_comma_in_array($source) {
-		$this->tkns = token_get_all($source);
+		$this->tkns       = token_get_all($source);
 		$this->code       = '';
 		$in_array_counter = 0;
 		while (list($index, $token) = each($this->tkns)) {
@@ -331,7 +333,9 @@ class CodeFormatter {
 			$this->ptr = $index;
 			switch ($id) {
 				case T_ARRAY:
-					$in_array_counter++;
+					if ($this->is_token(ST_PARENTHESES_OPEN)) {
+						$in_array_counter++;
+					}
 					$this->append_code($text, false);
 					break;
 				case ST_PARENTHESES_OPEN:
@@ -464,7 +468,7 @@ class CodeFormatter {
 		return $this->code;
 	}
 	private function reindent_obj_ops($source) {
-		$this->tkns = token_get_all($source);
+		$this->tkns              = token_get_all($source);
 		$this->code              = '';
 		$in_objop_context        = 0;// 1 - indent, 2 - don't indent, so future auto-align takes place
 		$alignable_objop_counter = 0;
@@ -507,7 +511,7 @@ class CodeFormatter {
 					} elseif (2 === $in_objop_context) {
 						$placeholder = '';
 						if (!$printed_placeholder) {
-							$placeholder = sprintf(self::ALIGNABLE_OBJOP, $alignable_objop_counter);
+							$placeholder         = sprintf(self::ALIGNABLE_OBJOP, $alignable_objop_counter);
 							$printed_placeholder = true;
 						}
 						$this->append_code($placeholder.$text, false);
@@ -544,7 +548,7 @@ class CodeFormatter {
 				continue;
 			}
 
-			$lines = explode($this->new_line, $this->code);
+			$lines            = explode($this->new_line, $this->code);
 			$lines_with_objop = [];
 			$block_count      = 0;
 
@@ -567,11 +571,129 @@ class CodeFormatter {
 					$farthest_objop = max($farthest_objop, strpos($lines[$idx], $current_align_objop));
 				}
 				foreach ($group as $idx) {
-					$line = $lines[$idx];
+					$line          = $lines[$idx];
 					$current_objop = strpos($line, $current_align_objop);
-					$delta = abs($farthest_objop-$current_objop);
+					$delta         = abs($farthest_objop-$current_objop);
 					if ($delta > 0) {
-						$line = str_replace($current_align_objop, str_repeat(' ', $delta).$current_align_objop, $line);
+						$line        = str_replace($current_align_objop, str_repeat(' ', $delta).$current_align_objop, $line);
+						$lines[$idx] = $line;
+					}
+				}
+			}
+
+			$this->code = str_replace($current_align_objop, '', implode($this->new_line, $lines));
+		}
+
+		return $this->code;
+	}
+	private function reindent_double_arrow($source) {
+		$this->tkns              = token_get_all($source);
+		$this->code              = '';
+		$in_objop_context        = 0;// 1 - indent, 2 - don't indent, so future auto-align takes place
+		$alignable_objop_counter = 0;
+		$printed_placeholder     = false;
+		$paren_count             = 0;
+		$bracket_count           = 0;
+		while (list($index, $token) = each($this->tkns)) {
+			list($id, $text) = $this->get_token($token);
+			$this->ptr = $index;
+			switch ($id) {
+				case ST_PARENTHESES_OPEN:
+					$paren_count++;
+					$this->append_code($text, false);
+					break;
+				case ST_PARENTHESES_CLOSE:
+					$paren_count--;
+					$this->append_code($text, false);
+					break;
+				case ST_BRACKET_OPEN:
+					$bracket_count++;
+					$this->append_code($text, false);
+					break;
+				case ST_BRACKET_CLOSE:
+					$bracket_count--;
+					$this->append_code($text, false);
+					break;
+				case T_DOUBLE_ARROW:
+					if (0 === $in_objop_context && ($this->has_ln_before() || $this->has_ln_prev_token())) {
+						$in_objop_context = 1;
+					} elseif (0 === $in_objop_context && !($this->has_ln_before() || $this->has_ln_prev_token())) {
+						$alignable_objop_counter++;
+						$in_objop_context = 2;
+					} elseif ($paren_count > 0) {
+						$in_objop_context = 0;
+					}
+					if (1 == $in_objop_context) {
+						$this->set_indent(+1);
+						$this->append_code($this->get_indent().$text, false);
+						$this->set_indent(-1);
+					} elseif (2 === $in_objop_context) {
+						$placeholder = '';
+						if (!$printed_placeholder) {
+							$placeholder         = sprintf(self::ALIGNABLE_OBJOP, $alignable_objop_counter);
+							$printed_placeholder = true;
+						}
+						$this->append_code($placeholder.$text, false);
+					} else {
+						$this->append_code($text, false);
+					}
+					break;
+				case T_VARIABLE:
+					if (0 === $paren_count && 0 === $bracket_count && 0 !== $in_objop_context) {
+						$in_objop_context = 0;
+					}
+					$this->append_code($text, false);
+					break;
+				case ST_SEMI_COLON:
+					if (0 !== $in_objop_context) {
+						$in_objop_context = 0;
+					}
+					$this->append_code($text, false);
+					break;
+				default:
+					$this->append_code($text, false);
+					break;
+			}
+			if (substr_count($text, $this->new_line) > 0) {
+				$printed_placeholder = false;
+			}
+		}
+
+		for ($j = $alignable_objop_counter; $j > 0; $j--) {
+			$current_align_objop = sprintf(self::ALIGNABLE_OBJOP, $j);
+			if (substr_count($this->code, $current_align_objop) <= 1) {
+				$this->code = str_replace($current_align_objop, '', $this->code);
+				continue;
+			}
+
+			$lines            = explode($this->new_line, $this->code);
+			$lines_with_objop = [];
+			$block_count      = 0;
+
+			foreach ($lines as $idx => $line) {
+				if (substr_count($line, $current_align_objop) > 0) {
+					$lines_with_objop[$block_count][] = $idx;
+				} else {
+					$block_count++;
+				}
+			}
+
+			$i = 0;
+			foreach ($lines_with_objop as $group) {
+				if (1 == sizeof($group)) {
+					continue;
+				}
+				$i++;
+				$farthest_objop = 0;
+				foreach ($group as $idx) {
+					$farthest_objop = max($farthest_objop, strpos($lines[$idx], $current_align_objop));
+				}
+				foreach ($group as $idx) {
+					$line          = $lines[$idx];
+					$current_objop = strpos($line, $current_align_objop);
+					$delta         = abs($farthest_objop-$current_objop);
+					if ($delta > 0) {
+						$line        = str_replace($current_align_objop, str_repeat(' ', $delta).$current_align_objop, $line);
 						$lines[$idx] = $line;
 					}
 				}
@@ -592,7 +714,7 @@ class CodeFormatter {
 			$ignore_stack       = 0;
 			$double_quote_state = false;
 			$single_quote_state = false;
-			$len = strlen($line);
+			$len                = strlen($line);
 			for ($i = 0; $i < $len; $i++) {
 				$char = substr($line, $i, 1);
 				if (ST_PARENTHESES_OPEN == $char || ST_PARENTHESES_OPEN == $char || ST_CURLY_OPEN == $char || ST_BRACKET_OPEN == $char) {
@@ -862,7 +984,7 @@ class CodeFormatter {
 		}
 	}
 	private function eliminate_duplicated_empty_lines($source) {
-		$lines = explode($this->new_line, $source);
+		$lines              = explode($this->new_line, $source);
 		$empty_lines_chunks = [];
 		$block_count        = 0;
 		foreach ($lines as $idx => $line) {
@@ -885,69 +1007,138 @@ class CodeFormatter {
 
 		return implode($this->new_line, $lines);
 	}
-	private function align_operators($source) {
-		$lines = explode($this->new_line, $source);
-		$lines_with_equals = [];
-		$block_count       = 0;
+	private function align_equals($source) {
+		$this->tkns    = token_get_all($source);
+		$this->code    = '';
+		$paren_count   = 0;
+		$bracket_count = 0;
+		while (list($index, $token) = each($this->tkns)) {
+			list($id, $text) = $this->get_token($token);
+			$this->ptr = $index;
+			switch ($id) {
+				case ST_PARENTHESES_OPEN:
+					$paren_count++;
+					$this->append_code($text, false);
+					break;
+				case ST_PARENTHESES_CLOSE:
+					$paren_count--;
+					$this->append_code($text, false);
+					break;
+				case ST_BRACKET_OPEN:
+					$bracket_count++;
+					$this->append_code($text, false);
+					break;
+				case ST_BRACKET_CLOSE:
+					$bracket_count--;
+					$this->append_code($text, false);
+					break;
+				case ST_EQUAL:
+					if (!$paren_count && !$bracket_count) {
+						$this->append_code(self::ALIGNABLE_EQUAL.$text, false);
+						break;
+					}
+
+				default:
+					$this->append_code($text, false);
+					break;
+			}
+		}
+
+		$lines            = explode($this->new_line, $this->code);
+		$lines_with_objop = [];
+		$block_count      = 0;
 
 		foreach ($lines as $idx => $line) {
-			if (1 == substr_count($line, '=') && 0 == substr_count($line, '==') && 0 == substr_count($line, '=>') && 0 == substr_count($line, '(') && 0 == substr_count($line, '.=') && 0 == substr_count($line, '+=') && 0 == substr_count($line, '-=') && 0 == substr_count($line, '*=') && 0 == substr_count($line, '&=') && 0 == substr_count($line, '|=') && 0 == substr_count($line, '>=') && 0 == substr_count($line, '!=') && 0 == substr_count($line, '<=') && 0 == substr_count($line, '<<=') && 0 == substr_count($line, '>>=') && 0 == substr_count($line, '^=') && 0 == substr_count($line, '%=')) {
-				$lines_with_equals[$block_count][] = $idx;
+			if (substr_count($line, self::ALIGNABLE_EQUAL) > 0) {
+				$lines_with_objop[$block_count][] = $idx;
 			} else {
 				$block_count++;
 			}
 		}
 
-		foreach ($lines_with_equals as $group) {
+		$i = 0;
+		foreach ($lines_with_objop as $group) {
 			if (1 == sizeof($group)) {
 				continue;
 			}
-			$farthest_equals_sign = 0;
+			$i++;
+			$farthest_objop = 0;
 			foreach ($group as $idx) {
-				$farthest_equals_sign = max($farthest_equals_sign, strpos($lines[$idx], '='));
+				$farthest_objop = max($farthest_objop, strpos($lines[$idx], self::ALIGNABLE_EQUAL));
 			}
 			foreach ($group as $idx) {
-				$line = $lines[$idx];
-				$current_equals = strpos($line, '=');
-				$delta = abs($farthest_equals_sign-$current_equals);
+				$line          = $lines[$idx];
+				$current_objop = strpos($line, self::ALIGNABLE_EQUAL);
+				$delta         = abs($farthest_objop-$current_objop);
 				if ($delta > 0) {
-					$line = preg_replace('/=/', str_repeat(' ', $delta).'=', $line, 1);
+					$line        = str_replace(self::ALIGNABLE_EQUAL, str_repeat(' ', $delta).self::ALIGNABLE_EQUAL, $line);
 					$lines[$idx] = $line;
 				}
 			}
 		}
 
-		$lines_with_alignable_comments = [];
-		$block_count                   = 0;
-		foreach ($lines as $idx => $line) {
-			if (substr_count($line, self::ALIGNABLE_COMMENT) > 0 && strpos($line, self::ALIGNABLE_COMMENT) > 0) {
-				$lines_with_alignable_comments[$block_count][] = $idx;
-			} else {
-				$block_count++;
-			}
-		}
+		$this->code = str_replace(self::ALIGNABLE_EQUAL, '', implode($this->new_line, $lines));
 
-		foreach ($lines_with_alignable_comments as $group) {
-			if (1 == sizeof($group)) {
-				continue;
-			}
-			$farthest_comment = 0;
-			foreach ($group as $idx) {
-				$farthest_comment = max($farthest_comment, strpos($lines[$idx], self::ALIGNABLE_COMMENT));
-			}
-			foreach ($group as $idx) {
-				$line = $lines[$idx];
-				$current_comment = strpos($line, self::ALIGNABLE_COMMENT);
-				$delta = abs($farthest_comment-$current_comment);
-				if ($delta > 0) {
-					$line = str_replace(self::ALIGNABLE_COMMENT, str_repeat(' ', $delta).self::ALIGNABLE_COMMENT, $line);
-					$lines[$idx] = $line;
-				}
-			}
-		}
-		$ret = implode($this->new_line, $lines);
-		return str_replace(self::ALIGNABLE_COMMENT, '//', $ret);
+		return $this->code;
 	}
+	private function align_double_arrow($source) {
+		$this->tkns = token_get_all($source);
+		$this->code = '';
+
+		while (list($index, $token) = each($this->tkns)) {
+			list($id, $text) = $this->get_token($token);
+			$this->ptr = $index;
+			switch ($id) {
+
+				case T_DOUBLE_ARROW:
+
+					$this->append_code(self::ALIGNABLE_EQUAL.$text, false);
+					break;
+
+				default:
+					$this->append_code($text, false);
+					break;
+			}
+		}
+
+		$lines            = explode($this->new_line, $this->code);
+		$lines_with_objop = [];
+		$block_count      = 0;
+
+		foreach ($lines as $idx => $line) {
+			if (substr_count($line, self::ALIGNABLE_EQUAL) > 0) {
+				$lines_with_objop[$block_count][] = $idx;
+			} else {
+				$block_count++;
+			}
+		}
+
+		$i = 0;
+		foreach ($lines_with_objop as $group) {
+			if (1 == sizeof($group)) {
+				continue;
+			}
+			$i++;
+			$farthest_objop = 0;
+			foreach ($group as $idx) {
+				$farthest_objop = max($farthest_objop, strpos($lines[$idx], self::ALIGNABLE_EQUAL));
+			}
+			foreach ($group as $idx) {
+				$line          = $lines[$idx];
+				$current_objop = strpos($line, self::ALIGNABLE_EQUAL);
+				$delta         = abs($farthest_objop-$current_objop);
+				if ($delta > 0) {
+					$line        = str_replace(self::ALIGNABLE_EQUAL, str_repeat(' ', $delta).self::ALIGNABLE_EQUAL, $line);
+					$lines[$idx] = $line;
+				}
+			}
+		}
+
+		$this->code = str_replace(self::ALIGNABLE_EQUAL, '', implode($this->new_line, $lines));
+
+		return $this->code;
+	}
+
 	public function resize_spaces($source) {
 		$new_tokens = [];
 		$this->tkns = token_get_all($source);
@@ -1032,7 +1223,7 @@ class CodeFormatter {
 					}
 				case T_DOUBLE_ARROW:
 					if ($this->is_token(array(T_CONSTANT_ENCAPSED_STRING, T_STRING, T_VARIABLE), true)) {
-						$this->append_code($this->get_space().$text.$this->get_space(), false);
+						$this->append_code($this->get_space().$text.$this->get_space());
 						break;
 					}
 				case T_PUBLIC:
@@ -1113,7 +1304,7 @@ class CodeFormatter {
 	}
 	private function substr_count_trailing($haystack, $needle) {
 		$cnt = 0;
-		$i = strlen($haystack)-1;
+		$i   = strlen($haystack)-1;
 		for ($i = $i; $i >= 0; $i--) {
 			$char = substr($haystack, $i, 1);
 			if ($needle == $char) {
